@@ -1,0 +1,2 @@
+* text=auto
+server/*.py text eol=lf

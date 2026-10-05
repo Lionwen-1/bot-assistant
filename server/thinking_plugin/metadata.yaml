@@ -1,0 +1,8 @@
+name: astrbot_plugin_thinking_control
+display_name: 思维强度控制
+desc: 为每个 QQ bot 单独设置 DeepSeek 思维强度，并允许 AstrBot 管理员在聊天中调整。
+author: bot-assistant
+version: 1.0.0
+astrbot_version: ">=4.0.0"
+support_platforms:
+  - aiocqhttp
