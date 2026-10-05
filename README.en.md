@@ -29,7 +29,7 @@ The [pre-publication privacy audit](docs/PUBLIC_RELEASE_AUDIT.md) records the ch
 
 ## Quick start
 
-1. Download the newest successful `BotAssistant-win64` artifact from **Actions → Windows build**, extract it, and run `BotAssistant.exe`. Or build from source as shown below.
+1. Download `BotAssistant-0.7.1-win64.zip` from the [0.7.1 preview release](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.1), extract it, and run `BotAssistant.exe`. For newer builds, use **Actions → Windows build**, or build from source as shown below.
 2. Select a connection mode. For native Windows, choose a new empty folder and supply your own model API, dashboard password, and optional persona or voice settings.
 3. Add a QQ account, open its QR code, and confirm the login in the mobile QQ app.
 4. Use that account's QR action if it disconnects. The app checks status and code freshness and does not restart an account whose state is unknown.

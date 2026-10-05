@@ -32,7 +32,7 @@
 
 ## 下载与开始使用
 
-1. 在仓库的 **Actions → Windows build** 下载最新成功构建的 `BotAssistant-win64` 产物，解压后双击 `BotAssistant.exe`。也可以按下文从源码构建。运行 EXE 无需安装 Python。
+1. 从 [0.7.1 预览版](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.1)下载 `BotAssistant-0.7.1-win64.zip`，解压后双击 `BotAssistant.exe`。也可从 **Actions → Windows build** 获取最新构建，或按下文从源码构建。运行 EXE 无需安装 Python。
 2. 在“连接设置”选择部署方式。免 Docker 模式选择新的空目录，并填写自己的模型 API、AstrBot 控制台密码、角色与可选语音设置；其他模式按界面填写本机项目或 SSH 服务器信息。
 3. 点击“添加账号”，输入 QQ 号和昵称；在该账号卡片获取二维码，用手机 QQ 扫码确认。
 4. 登录后查看账号状态。掉线时只操作对应卡片的“获取登录码”；程序会检查状态与旧码时效，状态不明时不会重启账号。
