@@ -26,6 +26,8 @@ if ($LASTEXITCODE -ne 0) { throw "测试未通过" }
     (Join-Path $projectRoot "run.pyw")
 if ($LASTEXITCODE -ne 0) { throw "EXE 构建失败" }
 $exe = Join-Path $projectRoot "release\BotAssistant.exe"
+$releaseIcon = Join-Path $projectRoot "release\bot-assistant.ico"
+Copy-Item -LiteralPath (Join-Path $projectRoot "assets\bot-assistant.ico") -Destination $releaseIcon -Force
 $marker = Join-Path $env:TEMP "bot-assistant-build-selftest.json"
 if (Test-Path -LiteralPath $marker) { Remove-Item -LiteralPath $marker -Force }
 $process = Start-Process -FilePath $exe -ArgumentList @("--self-test", ('"' + $marker + '"')) `
@@ -45,7 +47,7 @@ $package = Join-Path $projectRoot "release\BotAssistant-0.7.1-win64.zip"
 if (Test-Path -LiteralPath $package) { Remove-Item -LiteralPath $package -Force }
 Compress-Archive -LiteralPath @(
     $exe,
-    (Join-Path $projectRoot "assets\bot-assistant.ico"),
+    $releaseIcon,
     (Join-Path $projectRoot "scripts\Install-BotAssistant-Desktop.ps1"),
     (Join-Path $projectRoot "README.md"),
     (Join-Path $projectRoot "README.en.md"),
