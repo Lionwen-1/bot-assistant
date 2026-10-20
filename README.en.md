@@ -4,14 +4,14 @@
 
 [中文说明](README.md) · [Deployment](#deployment-modes) · [Quick start](#quick-start) · [Validation](#validation) · [License](COPYRIGHT.md) · [Support](#support-the-project)
 
-> **Version 0.7.1 is a prerelease.** An isolated Windows project has started the downloaded components and generated a login QR code. Real QQ login, message exchange, and simultaneous multi-account operation in a fresh native installation still need independent testing.
+> **Version 0.7.2 is a prerelease.** An isolated Windows project has started the downloaded components and generated a login QR code. Real QQ login, message exchange, and simultaneous multi-account operation in a fresh native installation still need independent testing.
 
 ## Features
 
 | Feature | What it does |
 | --- | --- |
 | Guided setup | Choose native Windows without Docker, local Docker, or remote SSH. Official dependencies are downloaded on first use. |
-| Multiple QQ accounts | Separate NapCat data per account, dynamic account cards, avatar, status, QR code, rename, and targeted recovery. |
+| Multiple QQ accounts | Separate NapCat data per account, dynamic account cards, avatar, status, QR code, rename, targeted recovery, and pausing or resuming one account. |
 | Bot configuration | Use your own model API, persona, optional speech recognition, and optional voice replies. |
 | Reasoning effort | For supported DeepSeek models, set `none`, `low`, `high`, or `max` per QQ account. AstrBot admins can use short natural-language commands in chat. |
 | Project operations | Inspect services, logs, backups, safe configuration previews, and the plugin list; open the AstrBot dashboard. |
@@ -29,13 +29,15 @@ The [pre-publication privacy audit](docs/PUBLIC_RELEASE_AUDIT.md) records the ch
 
 ## Quick start
 
-1. Download `BotAssistant-0.7.1-win64.zip` from the [0.7.1 preview release](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.1), extract it, and run `BotAssistant.exe`. For newer builds, use **Actions → Windows build**, or build from source as shown below.
+1. Download `BotAssistant-0.7.2-win64.zip` from the [0.7.2 preview release](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.2), extract it, and run `BotAssistant.exe`. For newer builds, use **Actions → Windows build**, or build from source as shown below.
 2. Select a connection mode. For native Windows, choose a new empty folder and supply your own model API, dashboard password, and optional persona or voice settings.
 3. Add a QQ account, open its QR code, and confirm the login in the mobile QQ app.
-4. Use that account's QR action if it disconnects. The app checks status and code freshness and does not restart an account whose state is unknown.
+4. Use that account's QR action if it disconnects. The app checks status and code freshness and does not restart an account whose state is unknown. To temporarily stop one account, select **Pause** on its card; select **Resume** to start it again.
 5. Open **Project operations** for logs and backups, or **Bot settings** for model, voice, persona, and reasoning controls.
 
 Run `Install-BotAssistant-Desktop.ps1` from the ZIP if you want a desktop shortcut. It retains existing connection settings. See [native Windows setup](NATIVE_SETUP.md) for detailed setup and troubleshooting.
+
+Pausing preserves that account's login data and records your intent. An adopted Docker container with an `always` restart policy may start again after the Docker daemon restarts; the app then flags that the pause did not take effect so you can stop it again. Separate monitors must honor the saved account state themselves.
 
 ## Reasoning effort
 
@@ -47,7 +49,7 @@ The control currently supports `deepseek-flash` and `deepseek-v4-pro`. `high` is
 
 | Area | Current evidence |
 | --- | --- |
-| Tests and Windows executable | 42 automated tests and the packaged resource self-check passed locally. |
+| Tests and Windows executable | 47 automated tests and the packaged resource self-check passed locally. |
 | Existing cloud project | Two adopted accounts, service status, role isolation, and per-account reasoning state were checked. |
 | Admin chat command | Parsing and permission tests passed; a real QQ message has not yet been exercised. |
 | Fresh native setup | Component startup and QR generation passed; real QQ login, replies, and concurrent accounts remain to be tested. |

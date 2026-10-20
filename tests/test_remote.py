@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from bot_assistant.config import Profile, load_profile, save_profile
-from bot_assistant.remote import NO_CONSOLE, Remote, RemoteError, parse_host_keys
+from bot_assistant.remote import MANAGER_VERSION, NO_CONSOLE, Remote, RemoteError, parse_host_keys
 
 
 class RemoteTests(unittest.TestCase):
@@ -116,6 +116,20 @@ class RemoteTests(unittest.TestCase):
             with self.assertRaises(RemoteError) as caught:
                 remote.call("list")
             self.assertEqual(caught.exception.code, "ssh_timeout")
+
+    def test_pause_upgrades_old_server_manager_once(self):
+        remote = Remote(self.profile)
+        response = json.dumps({"protocol": 1, "manager_version": MANAGER_VERSION,
+                               "ok": True, "state": "paused"}).encode()
+        def install():
+            remote._manager_version = MANAGER_VERSION
+            return {"sha256": "test"}
+        with patch.object(remote, "deploy", side_effect=install) as deploy, patch.object(
+                remote, "_ssh", return_value=subprocess.CompletedProcess(
+                    ["ssh"], 0, response, b"")):
+            self.assertEqual(remote.call("pause", {"qq": "12345678"})["state"], "paused")
+            remote.call("resume", {"qq": "12345678"})
+        deploy.assert_called_once_with()
 
 
 if __name__ == "__main__":

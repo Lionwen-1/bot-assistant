@@ -128,6 +128,34 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(result["accounts"][0]["state"], "online")
         self.assertNotIn("token", json.dumps(result))
 
+    def test_adopted_pause_and_resume_touch_only_selected_container(self):
+        accounts = {
+            "12345678": {"name": "维娜", "created": 1, "mode": "adopted",
+                         "container": "napcat", "port": 6700, "token": "secret"},
+            "87654321": {"name": "风笛", "created": 2, "mode": "adopted",
+                         "container": "napcat-second", "port": 6701, "token": "secret"},
+        }
+        self.manager.save(accounts)
+        self.manager.pause("12345678")
+        self.assertEqual(self.manager.registry()["12345678"]["desired_state"], "stopped")
+        self.assertNotIn("desired_state", self.manager.registry()["87654321"])
+        with patch.object(self.manager, "_running", return_value=False):
+            self.assertEqual(("paused", "已主动下线"), manager_module.Manager.state(
+                self.manager, "12345678", self.manager.registry()["12345678"]))
+        self.assertEqual("pause_conflict", manager_module.Manager.state(
+            self.manager, "12345678", self.manager.registry()["12345678"])[0])
+        self.assertIn(("stop", "napcat"), self.manager.actions)
+        self.assertFalse(any("napcat-second" in str(action) for action in self.manager.actions))
+        with self.assertRaises(manager_module.ManagerError) as caught:
+            self.manager.prepare("12345678")
+        self.assertEqual(caught.exception.code, "paused")
+        self.manager.actions.clear()
+        with patch.object(self.manager, "_running", return_value=False):
+            self.manager.resume("12345678")
+        self.assertIn(("start", "napcat"), self.manager.actions)
+        self.assertNotIn("desired_state", self.manager.registry()["12345678"])
+        self.assertFalse(any("napcat-second" in str(action) for action in self.manager.actions))
+
     def test_qr_payload_is_png_and_contains_no_server_token(self):
         self.manager.add("12345678", "一号")
         png = base64.b64decode(

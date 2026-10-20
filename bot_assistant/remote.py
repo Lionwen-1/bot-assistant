@@ -15,6 +15,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from server.manager import VERSION as MANAGER_VERSION
+
 from .config import Profile, config_home
 
 PROTOCOL = 1
@@ -117,6 +119,7 @@ class Remote:
         profile.validate()
         self.profile = profile
         self.known_hosts = config_home() / "known_hosts"
+        self._manager_version: str | None = None
 
     @property
     def destination(self) -> str:
@@ -250,17 +253,20 @@ class Remote:
         data = self._json_result(result)
         if data.get("sha256") != digest:
             raise RemoteError("deploy_invalid", "服务器部署校验不一致")
+        self._manager_version = MANAGER_VERSION
         return data
 
     def call(self, action: str, payload: dict | None = None,
              timeout: int = 35) -> dict:
-        if action not in {"preflight", "list", "add", "adopt", "rename", "remove", "prepare",
+        if action not in {"preflight", "list", "add", "adopt", "rename", "remove", "pause", "resume", "prepare",
                           "project_status", "project_logs", "project_backup",
                           "project_backups", "project_configs", "project_config_read",
                           "project_plugins", "project_restart", "project_bot_settings",
                           "project_thinking_status", "project_thinking_install",
                           "project_thinking_set"}:
             raise ValueError("unsupported action")
+        if action in {"pause", "resume"} and self._manager_version != MANAGER_VERSION:
+            self.deploy()
         # The script path is fixed; only a known action is interpolated.
         command = f'python3 "{REMOTE_SCRIPT}" {action}'
         raw = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8")
@@ -268,4 +274,5 @@ class Remote:
         data = self._json_result(result)
         if data.get("protocol") != PROTOCOL:
             raise RemoteError("protocol_mismatch", "客户端与服务器脚本版本不兼容")
+        self._manager_version = data.get("manager_version")
         return data

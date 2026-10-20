@@ -35,7 +35,7 @@ if os.name == "nt":
     import msvcrt
 
 PROTOCOL = 1
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 IMAGE = "mlikiowa/napcat-docker@sha256:2cc70b45244ae3fabc657ffc3aaa4de8fb893518171e519659ab83d80e6d36b5"
 HOME = Path(os.environ.get("BOT_ASSISTANT_HOME", Path.home() / ".local/share/bot-assistant"))
 
@@ -144,6 +144,8 @@ class Manager:
                     raise ValueError("invalid account")
                 if account.get("mode", "managed") not in {"managed", "adopted"}:
                     raise ValueError("invalid account mode")
+                if account.get("desired_state", "running") not in {"running", "stopped"}:
+                    raise ValueError("invalid desired state")
                 if (account.get("mode") == "adopted" and
                     not CONTAINER_PATTERN.fullmatch(str(account.get("container", "")))):
                     raise ValueError("invalid adopted container")
@@ -271,6 +273,10 @@ class Manager:
         return result.stdout.strip() == "yes"
 
     def state(self, qq: str, account: dict) -> tuple[str, str]:
+        if account.get("desired_state") == "stopped":
+            if self._running(qq) is True:
+                return "pause_conflict", "已请求下线，但容器仍在运行"
+            return "paused", "已主动下线"
         running = self._running(qq)
         if running is None:
             return "unknown", "无法查询容器"
@@ -428,6 +434,55 @@ class Manager:
             self.save(accounts)
         return {"qq": qq, "data_kept": True, "container_kept": mode == "adopted"}
 
+    def pause(self, qq: object) -> dict:
+        """Stop only this QQ connection and persist the owner's offline intent."""
+        qq = validate_qq(qq)
+        with self.locked():
+            accounts = self.registry()
+            if qq not in accounts:
+                raise ManagerError("not_found", "找不到这个账号")
+            account = accounts[qq]
+            running = self._running(qq)
+            if running is None:
+                raise ManagerError("status_unknown", "无法确认容器状态，未执行主动下线")
+            previous = account.get("desired_state")
+            account["desired_state"] = "stopped"
+            self.save(accounts)  # Tell the watchdog before the connection drops.
+            try:
+                if running:
+                    if account.get("mode") == "adopted":
+                        self.docker("stop", self.container_name(qq), timeout=60)
+                    else:
+                        self.compose(qq, "stop", timeout=60)
+            except ManagerError:
+                if previous is None:
+                    account.pop("desired_state", None)
+                else:
+                    account["desired_state"] = previous
+                self.save(accounts)
+                raise
+        return {"qq": qq, "state": "paused", "data_kept": True}
+
+    def resume(self, qq: object) -> dict:
+        """Start only this QQ connection, then re-enable its health alerts."""
+        qq = validate_qq(qq)
+        with self.locked():
+            accounts = self.registry()
+            if qq not in accounts:
+                raise ManagerError("not_found", "找不到这个账号")
+            account = accounts[qq]
+            running = self._running(qq)
+            if running is None:
+                raise ManagerError("status_unknown", "无法确认容器状态，未恢复上线")
+            if not running:
+                if account.get("mode") == "adopted":
+                    self.docker("start", self.container_name(qq), timeout=60)
+                else:
+                    self.compose(qq, "up", "-d", timeout=120)
+            account.pop("desired_state", None)
+            self.save(accounts)
+        return {"qq": qq, "state": "starting"}
+
     def qr_mtime(self, qq: str) -> int:
         result = self._run(["docker", "exec", self.container_name(qq), "stat", "-c", "%Y",
                             "/app/napcat/cache/qrcode.png"])
@@ -467,6 +522,8 @@ class Manager:
             accounts = self.registry()
             if qq not in accounts:
                 raise ManagerError("not_found", "找不到这个账号")
+            if accounts[qq].get("desired_state") == "stopped":
+                raise ManagerError("paused", "账号已主动下线，请先点击恢复上线")
             state, _ = self.state(qq, accounts[qq])
             if state == "online":
                 return {"qq": qq, "state": "online"}
@@ -919,13 +976,14 @@ class ProjectOps:
 
 
 def response(ok: bool, **data) -> None:
-    print(json.dumps({"protocol": PROTOCOL, "ok": ok, **data}, ensure_ascii=False))
+    print(json.dumps({"protocol": PROTOCOL, "manager_version": VERSION,
+                      "ok": ok, **data}, ensure_ascii=False))
 
 
 def main() -> int:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
-        payload = json.load(sys.stdin) if action in {"add", "adopt", "rename", "remove", "prepare",
+        payload = json.load(sys.stdin) if action in {"add", "adopt", "rename", "remove", "pause", "resume", "prepare",
                                                        "project_status", "project_logs", "project_backup",
                                                        "project_backups", "project_configs",
                                                        "project_config_read", "project_plugins", "project_bot_settings",
@@ -948,6 +1006,10 @@ def main() -> int:
             result = manager.rename(payload.get("qq"), payload.get("name"))
         elif action == "remove":
             result = manager.remove(payload.get("qq"))
+        elif action == "pause":
+            result = manager.pause(payload.get("qq"))
+        elif action == "resume":
+            result = manager.resume(payload.get("qq"))
         elif action == "prepare":
             result = manager.prepare(payload.get("qq"))
         elif action.startswith("project_"):
@@ -957,6 +1019,11 @@ def main() -> int:
             elif action == "project_logs":
                 result = project.logs(payload.get("service"), payload.get("lines", 120))
             elif action == "project_restart":
+                service = str(payload.get("service", ""))
+                if any(item.get("desired_state") == "stopped"
+                       and item.get("container", manager.container(qq)) == service
+                       for qq, item in manager.registry().items()):
+                    raise ManagerError("paused", "该账号已主动下线，请从账号卡片恢复上线")
                 result = project.restart(payload.get("service"))
             elif action == "project_backup":
                 result = project.backup()

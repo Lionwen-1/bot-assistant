@@ -93,6 +93,10 @@ class AccountCard(tk.Canvas):
         self.menu.add_command(label="修改昵称", command=lambda: app.rename_account(account))
         if account.get("astrbot_ws_port"):
             self.menu.add_command(label="对接 AstrBot", command=lambda: app.show_local_connection(account))
+        if account.get("state") == "paused":
+            self.menu.add_command(label="恢复上线", command=lambda: app.resume_account(account))
+        else:
+            self.menu.add_command(label="主动下线", command=lambda: app.pause_account(account))
         self.menu.add_command(label="移除账号", command=lambda: app.remove_account(account))
         self.bind("<Button-1>", self.clicked)
         self.bind("<Motion>", self.hover)
@@ -129,29 +133,40 @@ class AccountCard(tk.Canvas):
         self.create_text(374, 28, text="···", fill=MUTED,
                          font=(LATIN, 17, "bold"), tags="menu")
         label, color = {"online": ("在线运行", JADE),
-                        "offline": ("需要登录", RED)}.get(
+                        "offline": ("需要登录", RED),
+                        "paused": ("已主动下线", AMBER),
+                        "pause_conflict": ("下线未生效", RED)}.get(
                             state, ("状态待确认", AMBER))
         self.create_oval(18, 111, 27, 120, fill=color, outline="")
         self.create_text(35, 106, text=label, anchor="nw", fill=color,
                          font=(FONT, 10, "bold"))
-        if state != "online":
-            rounded(self, 258, 97, 382, 135, 10, AMBER, "prepare")
+        if state in {"online", "offline", "paused", "pause_conflict", "unknown"}:
+            button_color = ("#59413C" if state == "online" else
+                            JADE if state == "paused" else AMBER)
+            button_text = ("主动下线" if state == "online" else
+                           "恢复上线" if state == "paused" else
+                           "再次下线" if state == "pause_conflict" else
+                           "获取登录码" if state == "offline" else "检查登录码")
+            rounded(self, 258, 97, 382, 135, 10, button_color, "account_action")
             self.create_text(320, 116,
-                             text="获取登录码" if state == "offline" else "检查登录码",
-                             fill=BG,
-                             font=(FONT, 10, "bold"), tags="prepare")
+                             text=button_text, fill=TEXT if state == "online" else BG,
+                             font=(FONT, 10, "bold"), tags="account_action")
 
     def clicked(self, event) -> None:
         if event.x >= 352 and event.y <= 52:
             self.menu.tk_popup(event.x_root, event.y_root)
-        elif (self.account.get("state") != "online" and 258 <= event.x <= 382
-              and 97 <= event.y <= 135):
-            self.app.prepare(self.account["qq"])
+        elif 258 <= event.x <= 382 and 97 <= event.y <= 135:
+            state = self.account.get("state")
+            if state in {"online", "pause_conflict"}:
+                self.app.pause_account(self.account)
+            elif state == "paused":
+                self.app.resume_account(self.account)
+            else:
+                self.app.prepare(self.account["qq"])
 
     def hover(self, event) -> None:
         clickable = (event.x >= 352 and event.y <= 52) or (
-            self.account.get("state") != "online" and 258 <= event.x <= 382
-            and 97 <= event.y <= 135)
+            258 <= event.x <= 382 and 97 <= event.y <= 135)
         self.configure(cursor="hand2" if clickable else "")
 
 
@@ -979,6 +994,42 @@ class App:
             self.refresh()
         self.task("正在移除账号…", lambda: self.remote.call(
             "remove", {"qq": account["qq"]}, timeout=90), done)
+
+    def pause_account(self, account: dict) -> None:
+        if self.busy:
+            self.say("请等待当前操作完成后再主动下线")
+            return
+        if self.demo or not self.remote:
+            messagebox.showinfo("演示模式", "演示模式不会操作真实账号。", parent=self.root)
+            return
+        if not messagebox.askyesno(
+            "主动下线",
+            f"让 {account['name']}（{account['qq']}）主动下线？\n\n"
+            "仅停止这个账号，保留登录数据；其他账号继续运行。\n"
+            "本程序会记住主动下线状态；独立监控需另行遵从该状态。",
+            parent=self.root,
+        ):
+            return
+        def done(_result):
+            if self.qr_target == account["qq"]:
+                self.clear_qr()
+            self.say(f"{account['name']}已主动下线，其他账号不受影响")
+            self.refresh()
+        self.task(f"正在让 {account['name']} 下线…",
+                  lambda: self.remote.call("pause", {"qq": account["qq"]}, timeout=100), done)
+
+    def resume_account(self, account: dict) -> None:
+        if self.busy:
+            self.say("请等待当前操作完成后再恢复上线")
+            return
+        if self.demo or not self.remote:
+            messagebox.showinfo("演示模式", "演示模式不会操作真实账号。", parent=self.root)
+            return
+        def done(_result):
+            self.say(f"{account['name']}正在恢复连接；若需要扫码，请再点击获取登录码")
+            self.refresh()
+        self.task(f"正在恢复 {account['name']}…",
+                  lambda: self.remote.call("resume", {"qq": account["qq"]}, timeout=100), done)
 
     def prepare(self, qq: str, force: bool = False) -> None:
         if self.busy:

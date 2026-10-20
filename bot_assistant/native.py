@@ -332,6 +332,10 @@ class NativeLocal:
                     shell, env)
 
     def _state(self, qq: str, account: dict) -> tuple[str, str]:
+        if account.get("desired_state") == "stopped":
+            if _running(self._pid(f"napcat-{qq}")):
+                return "pause_conflict", "已请求下线，但进程仍在运行"
+            return "paused", "已主动下线"
         if not _running(self._pid(f"napcat-{qq}")):
             return "offline", "NapCat 未运行"
         request = urllib.request.Request(f'http://127.0.0.1:{account["http_port"]}/get_status',
@@ -374,7 +378,8 @@ class NativeLocal:
             accounts = self._accounts()
             result = {"accounts": []}
             for qq, item in sorted(accounts.items(), key=lambda pair: pair[1]["created"]):
-                if not _running(self._pid(f"napcat-{qq}")):
+                if (item.get("desired_state") != "stopped"
+                    and not _running(self._pid(f"napcat-{qq}"))):
                     self._start_napcat(qq, item)
                 state, detail = self._state(qq, item)
                 result["accounts"].append({"qq": qq, "name": item["name"],
@@ -422,11 +427,44 @@ class NativeLocal:
             self._save(accounts)
             self._restart_astrbot()
             result = {"qq": qq, "data_kept": True, "container_kept": False}
+        elif action == "pause":
+            qq = validate_qq(payload.get("qq"))
+            accounts = self._accounts()
+            if qq not in accounts:
+                raise RemoteError("not_found", "找不到这个账号")
+            previous = accounts[qq].get("desired_state")
+            pid = self._pid(f"napcat-{qq}")
+            accounts[qq]["desired_state"] = "stopped"
+            self._save(accounts)
+            try:
+                _stop(pid)
+                if _running(pid):
+                    raise RemoteError("stop_failed", "无法确认账号已下线")
+            except Exception as exc:
+                if previous is None:
+                    accounts[qq].pop("desired_state", None)
+                else:
+                    accounts[qq]["desired_state"] = previous
+                self._save(accounts)
+                raise RemoteError("stop_failed", "账号未成功下线，已恢复原状态") from exc
+            result = {"qq": qq, "state": "paused", "data_kept": True}
+        elif action == "resume":
+            qq = validate_qq(payload.get("qq"))
+            accounts = self._accounts()
+            if qq not in accounts:
+                raise RemoteError("not_found", "找不到这个账号")
+            if not _running(self._pid(f"napcat-{qq}")):
+                self._start_napcat(qq, accounts[qq])
+            accounts[qq].pop("desired_state", None)
+            self._save(accounts)
+            result = {"qq": qq, "state": "starting"}
         elif action == "prepare":
             qq = validate_qq(payload.get("qq"))
             accounts = self._accounts()
             if qq not in accounts:
                 raise RemoteError("not_found", "找不到这个账号")
+            if accounts[qq].get("desired_state") == "stopped":
+                raise RemoteError("paused", "账号已主动下线，请先点击恢复上线")
             state, _ = self._state(qq, accounts[qq])
             if state == "online":
                 result = {"qq": qq, "state": "online"}
@@ -481,6 +519,8 @@ class NativeLocal:
             if name not in names:
                 raise RemoteError("service_invalid", "所选服务不属于当前项目")
             if action == "project_restart":
+                if name != "astrbot" and self._accounts()[name[7:]].get("desired_state") == "stopped":
+                    raise RemoteError("paused", "该账号已主动下线，请从账号卡片恢复上线")
                 _stop(self._pid(name))
                 if name == "astrbot": self._start_astrbot()
                 else: self._start_napcat(name.removeprefix("napcat-"), self._accounts()[name[7:]])

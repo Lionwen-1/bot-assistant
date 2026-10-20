@@ -134,6 +134,10 @@ class Local:
                 result = self.manager.rename(payload.get("qq"), payload.get("name"))
             elif action == "remove":
                 result = self.manager.remove(payload.get("qq"))
+            elif action == "pause":
+                result = self.manager.pause(payload.get("qq"))
+            elif action == "resume":
+                result = self.manager.resume(payload.get("qq"))
             elif action == "prepare":
                 result = self.manager.prepare(payload.get("qq"))
             elif action.startswith("project_"):
@@ -154,6 +158,8 @@ class Local:
                     result = {"service": service, "text": content[-60000:]}
                     return {"protocol": self.module.PROTOCOL, "ok": True, **result}
                 if match and match.group(1) in accounts and action == "project_restart":
+                    if accounts[match.group(1)].get("desired_state") == "stopped":
+                        raise RemoteError("paused", "该账号已主动下线，请从账号卡片恢复上线")
                     self.manager.docker("restart", self.manager.container_name(match.group(1)), timeout=90)
                     return {"protocol": self.module.PROTOCOL, "ok": True,
                             "service": service, "restarted": True}

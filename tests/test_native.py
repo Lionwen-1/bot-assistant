@@ -112,6 +112,66 @@ class NativeAccountTests(unittest.TestCase):
         os.utime(path, (past, past))
         self.assertIsNone(self.native._qr("123456789"))
 
+    def test_pause_survives_refresh_and_resume_only_starts_selected_account(self):
+        self.native._save({
+            "12345678": {"name": "一号", "created": 1},
+            "87654321": {"name": "二号", "created": 2},
+        })
+        saved = self.native._account_folder("12345678") / "appdata" / "session"
+        saved.parent.mkdir(parents=True)
+        saved.write_text("login-data", encoding="utf-8")
+        starts = []
+        running = {101: True, 202: False}
+
+        def stop(pid):
+            running[pid] = False
+
+        def start(qq, account):
+            starts.append(qq)
+
+        with patch.object(self.native, "_pid", side_effect=lambda name: {
+            "napcat-12345678": 101, "napcat-87654321": 202,
+        }.get(name, 0)), patch.object(
+            self.native, "_start_astrbot"
+        ), patch("bot_assistant.native._running", side_effect=lambda pid: running.get(pid, False)), patch(
+            "bot_assistant.native._stop", side_effect=stop
+        ), patch.object(self.native, "_start_napcat", side_effect=start):
+            self.native.call("pause", {"qq": "12345678"})
+            accounts = self.native._accounts()
+            self.assertEqual(accounts["12345678"]["desired_state"], "stopped")
+            self.assertNotIn("desired_state", accounts["87654321"])
+            listed = self.native.call("list")["accounts"]
+            self.assertEqual([item["state"] for item in listed], ["paused", "offline"])
+            self.assertEqual(starts, ["87654321"])
+            running[101] = True
+            self.assertEqual(self.native.call("list")["accounts"][0]["state"], "pause_conflict")
+            running[101] = False
+            with self.assertRaises(RemoteError) as blocked:
+                self.native.call("prepare", {"qq": "12345678"})
+            self.assertEqual(blocked.exception.code, "paused")
+            with self.assertRaises(RemoteError) as blocked:
+                self.native.call("project_restart", {
+                    "path": self.native.profile.project_path,
+                    "service": "napcat-12345678",
+                })
+            self.assertEqual(blocked.exception.code, "paused")
+            self.native.call("resume", {"qq": "12345678"})
+
+        self.assertNotIn("desired_state", self.native._accounts()["12345678"])
+        self.assertEqual(starts[-1], "12345678")
+        self.assertEqual(starts.count("12345678"), 1)
+        self.assertEqual(saved.read_text(encoding="utf-8"), "login-data")
+
+    def test_pause_does_not_persist_when_process_remains_running(self):
+        self.native._save({"12345678": {"name": "一号", "created": 1}})
+        with patch.object(self.native, "_pid", return_value=101), patch(
+            "bot_assistant.native._running", return_value=True
+        ), patch("bot_assistant.native._stop"):
+            with self.assertRaises(RemoteError) as blocked:
+                self.native.call("pause", {"qq": "12345678"})
+        self.assertEqual(blocked.exception.code, "stop_failed")
+        self.assertNotEqual(self.native._accounts()["12345678"].get("desired_state"), "stopped")
+
 
 if __name__ == "__main__":
     unittest.main()

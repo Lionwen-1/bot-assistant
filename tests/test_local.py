@@ -95,6 +95,57 @@ class LocalTests(unittest.TestCase):
                          f"ws://astrbot:{listed['astrbot_ws_port']}/ws")
         self.assertIn(local.network_name, (account / "compose.yaml").read_text(encoding="utf-8"))
 
+    def test_managed_pause_and_resume_touch_only_selected_container(self):
+        local = Local(self.profile)
+        project = Path(self.profile.project_path)
+        project.mkdir(parents=True)
+        (project / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+        local.manager.save({
+            "12345678": {"name": "一号", "created": 1, "port": 21001, "token": "fake"},
+            "87654321": {"name": "二号", "created": 2, "port": 21002, "token": "fake"},
+        })
+        commands = []
+        running = {"12345678": True, "87654321": False}
+        def compose(qq, *args, **_kwargs):
+            commands.append((qq, args))
+            if args == ("stop",):
+                running[qq] = False
+            elif args == ("up", "-d"):
+                running[qq] = True
+            return ""
+        with patch("bot_assistant.local._docker_path", return_value=Path("docker")), patch.object(
+            local.manager, "_running", side_effect=lambda qq: running.get(qq, False)
+        ), patch.object(
+            local.manager, "compose", side_effect=compose,
+        ):
+            local.call("pause", {"qq": "12345678"})
+            accounts = local.manager.registry()
+            self.assertEqual(accounts["12345678"]["desired_state"], "stopped")
+            self.assertNotIn("desired_state", accounts["87654321"])
+            self.assertEqual(local.call("list")["accounts"][0]["state"], "paused")
+            running["12345678"] = True
+            self.assertEqual(local.call("list")["accounts"][0]["state"], "pause_conflict")
+            running["12345678"] = False
+            with self.assertRaises(RemoteError) as blocked:
+                local.call("prepare", {"qq": "12345678"})
+            self.assertEqual(blocked.exception.code, "paused")
+            with self.assertRaises(RemoteError) as blocked:
+                local.call("project_restart", {
+                    "path": self.profile.project_path, "service": "napcat-12345678",
+                })
+            self.assertEqual(blocked.exception.code, "paused")
+
+        with patch("bot_assistant.local._docker_path", return_value=Path("docker")), patch.object(
+            local.manager, "_running", side_effect=lambda qq: running.get(qq, False)
+        ), patch.object(
+            local.manager, "compose", side_effect=compose,
+        ):
+            local.call("resume", {"qq": "12345678"})
+        self.assertEqual(commands, [("12345678", ("stop",)),
+                                    ("12345678", ("up", "-d"))])
+        self.assertNotIn("desired_state", local.manager.registry()["12345678"])
+        self.assertNotIn("desired_state", local.manager.registry()["87654321"])
+
 
 if __name__ == "__main__":
     unittest.main()
