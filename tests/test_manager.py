@@ -325,6 +325,73 @@ class ProjectOpsTests(unittest.TestCase):
         self.assertFalse(any(name.startswith("backups/") for name in names))
         self.assertEqual(self.project.backups()["backups"][0]["name"], saved["name"])
 
+    def test_text_plugin_install_updates_with_backup_and_restarts_only_astrbot(self):
+        files_v1 = [
+            {"path": "main.py", "content": "VALUE = 1\n"},
+            {"path": "metadata.yaml", "content":
+             "name: astrbot_plugin_demo\nversion: 1.0.0\n"},
+        ]
+        files_v2 = [
+            {"path": "main.py", "content": "VALUE = 2\n"},
+            {"path": "metadata.yaml", "content":
+             "name: astrbot_plugin_demo\nversion: 2.0.0\n"},
+            {"path": "config.json", "content": '{"enabled":true}\n'},
+        ]
+        with (patch.object(self.project, "services", return_value=["astrbot"]),
+              patch.object(self.project, "_compose", return_value="") as compose):
+            installed = self.project.plugin_install("astrbot_plugin_demo", files_v1)
+            updated = self.project.plugin_install("astrbot_plugin_demo", files_v2)
+        self.assertFalse(installed["updated"])
+        self.assertTrue(updated["updated"])
+        target = self.root / "data" / "plugins" / "astrbot_plugin_demo"
+        self.assertEqual((target / "main.py").read_text(), "VALUE = 2\n")
+        previous = self.root / "backups" / updated["backup"] / "previous" / "main.py"
+        self.assertEqual(previous.read_text(), "VALUE = 1\n")
+        self.assertEqual(
+            [call.args for call in compose.call_args_list],
+            [("restart", "astrbot"), ("restart", "astrbot")],
+        )
+
+    def test_text_plugin_install_rejects_traversal_and_bad_syntax(self):
+        metadata = {"path": "metadata.yaml", "content":
+                    "name: astrbot_plugin_demo\nversion: 1.0.0\n"}
+        for files in (
+            [{"path": "../main.py", "content": "VALUE = 1\n"}, metadata],
+            [{"path": "..\\main.py", "content": "VALUE = 1\n"}, metadata],
+            [{"path": "C:\\main.py", "content": "VALUE = 1\n"}, metadata],
+            [{"path": "main.py", "content": "def broken(:\n"}, metadata],
+        ):
+            with self.assertRaises(manager_module.ManagerError) as caught:
+                manager_module.install_plugin_bundle(
+                    self.root, "astrbot_plugin_demo", files
+                )
+            self.assertEqual(caught.exception.code, "plugin_package_invalid")
+        self.assertFalse((self.root / "data" / "plugins" / "astrbot_plugin_demo").exists())
+
+    def test_text_plugin_install_rolls_back_when_astrbot_restart_fails(self):
+        files_v1 = [
+            {"path": "main.py", "content": "VALUE = 1\n"},
+            {"path": "metadata.yaml", "content":
+             "name: astrbot_plugin_demo\nversion: 1.0.0\n"},
+        ]
+        files_v2 = [
+            {"path": "main.py", "content": "VALUE = 2\n"},
+            {"path": "metadata.yaml", "content":
+             "name: astrbot_plugin_demo\nversion: 2.0.0\n"},
+        ]
+        manager_module.install_plugin_bundle(
+            self.root, "astrbot_plugin_demo", files_v1
+        )
+        restart_failed = manager_module.ManagerError("docker_failed", "fake failure")
+        with (patch.object(self.project, "services", return_value=["astrbot"]),
+              patch.object(self.project, "_compose",
+                           side_effect=[restart_failed, ""])):
+            with self.assertRaises(manager_module.ManagerError) as caught:
+                self.project.plugin_install("astrbot_plugin_demo", files_v2)
+        self.assertEqual(caught.exception.code, "plugin_restart_failed")
+        target = self.root / "data" / "plugins" / "astrbot_plugin_demo"
+        self.assertEqual((target / "main.py").read_text(), "VALUE = 1\n")
+
     def test_bot_settings_summary_never_returns_api_credentials(self):
         config = self.root / "data" / "cmd_config.json"
         config.write_text(json.dumps({

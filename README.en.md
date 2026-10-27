@@ -4,7 +4,7 @@
 
 [中文说明](README.md) · [Deployment](#deployment-modes) · [Quick start](#quick-start) · [Validation](#validation) · [License](COPYRIGHT.md) · [Support](#support-the-project)
 
-> **Version 0.7.2 is a prerelease.** An isolated Windows project has started the downloaded components and generated a login QR code. Real QQ login, message exchange, and simultaneous multi-account operation in a fresh native installation still need independent testing.
+> **Source version 0.8.0 is a prerelease.** An isolated Windows project has started the downloaded components and generated a login QR code. Real QQ login, message exchange, and simultaneous multi-account operation in a fresh native installation still need independent testing.
 
 ## Features
 
@@ -15,6 +15,7 @@
 | Bot configuration | Use your own model API, persona, optional speech recognition, and optional voice replies. |
 | Reasoning effort | For supported DeepSeek models, set `none`, `low`, `high`, or `max` per QQ account. AstrBot admins can use short natural-language commands in chat. |
 | Project operations | Inspect services, logs, backups, safe configuration previews, and the plugin list; open the AstrBot dashboard. |
+| Plugin iteration | Install or update a text-only AstrBot plugin from a local source folder with validation, backup, rollback, and an AstrBot-only restart. |
 
 ## Deployment modes
 
@@ -29,7 +30,7 @@ The [pre-publication privacy audit](docs/PUBLIC_RELEASE_AUDIT.md) records the ch
 
 ## Quick start
 
-1. Download `BotAssistant-0.7.2-win64.zip` from the [0.7.2 preview release](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.2), extract it, and run `BotAssistant.exe`. For newer builds, use **Actions → Windows build**, or build from source as shown below.
+1. For the newest 0.8.0 features, download a main-branch artifact from **Actions → Windows build**, or build from source below. The [0.7.2 release](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.2) remains the stable preview download. Extract the package and run `BotAssistant.exe`; Python is not required to run it.
 2. Select a connection mode. For native Windows, choose a new empty folder and supply your own model API, dashboard password, and optional persona or voice settings.
 3. Add a QQ account, open its QR code, and confirm the login in the mobile QQ app.
 4. Use that account's QR action if it disconnects. The app checks status and code freshness and does not restart an account whose state is unknown. To temporarily stop one account, select **Pause** on its card; select **Resume** to start it again.
@@ -38,6 +39,8 @@ The [pre-publication privacy audit](docs/PUBLIC_RELEASE_AUDIT.md) records the ch
 Run `Install-BotAssistant-Desktop.ps1` from the ZIP if you want a desktop shortcut. It retains existing connection settings. See [native Windows setup](NATIVE_SETUP.md) for detailed setup and troubleshooting.
 
 Pausing preserves that account's login data and records your intent. An adopted Docker container with an `always` restart policy may start again after the Docker daemon restarts; the app then flags that the pause did not take effect so you can stop it again. Separate monitors must honor the saved account state themselves.
+
+The plugin page accepts explicitly selected UTF-8 text source folders only. It rejects binary files, symlinks, unsafe paths, oversized packages, and invalid Python syntax; it does not execute or automatically install `requirements.txt` dependencies. See [plugin installation boundaries](docs/PLUGIN_INSTALL.md).
 
 ## Reasoning effort
 
@@ -49,7 +52,7 @@ The control currently supports `deepseek-flash` and `deepseek-v4-pro`. `high` is
 
 | Area | Current evidence |
 | --- | --- |
-| Tests and Windows executable | 47 automated tests and the packaged resource self-check passed locally. |
+| Tests and Windows executable | 51 automated tests and the packaged-resource self-check pass for 0.8.0. |
 | Existing cloud project | Two adopted accounts, service status, role isolation, and per-account reasoning state were checked. |
 | Admin chat command | Parsing and permission tests passed; a real QQ message has not yet been exercised. |
 | Fresh native setup | Component startup and QR generation passed; real QQ login, replies, and concurrent accounts remain to be tested. |

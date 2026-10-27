@@ -16,7 +16,7 @@ if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $icon)) 
 $install = Join-Path $env:LOCALAPPDATA "BotAssistant"
 New-Item -ItemType Directory -Path $install -Force | Out-Null
 $installedExe = Join-Path $install "BotAssistant.exe"
-$installedIcon = Join-Path $install "bot-assistant-0.7.2.ico"
+$installedIcon = Join-Path $install "bot-assistant-0.8.0.ico"
 Copy-Item -LiteralPath $exe -Destination $installedExe -Force
 Copy-Item -LiteralPath $icon -Destination $installedIcon -Force
 

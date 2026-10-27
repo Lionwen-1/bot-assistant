@@ -5,9 +5,14 @@ from __future__ import annotations
 import threading
 import queue
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from .remote import Remote, RemoteError, bundled_thinking_plugin
+from .remote import (
+    Remote,
+    RemoteError,
+    bundle_plugin_folder,
+    bundled_thinking_plugin,
+)
 from .local import Local
 from .native import NativeLocal
 
@@ -192,13 +197,53 @@ class ProjectWindow(tk.Toplevel):
         tk.Label(bar, text="已安装插件", bg=BG, fg=TEXT,
                  font=(FONT, 13, "bold")).pack(side="left")
         self._button(bar, "在 AstrBot 控制台管理 ↗", self.open_dashboard).pack(side="right")
+        self._button(bar, "安装/更新本地插件", self.install_local_plugin).pack(
+            side="right", padx=(0, 8)
+        )
         self.plugin_tree = self._tree(self.plugin_tab,
                                       ("id", "name", "version", "description"),
                                       ("目录", "名称", "版本", "简介"),
                                       (240, 180, 90, 360))
         tk.Label(self.plugin_tab,
-                 text="插件启停与更新使用 AstrBot 自带管理界面，保持其运行时状态一致。",
+                 text=("可上传纯文本插件源码；程序会校验、备份并只重启 AstrBot。"
+                       "插件启停及依赖安装仍使用 AstrBot 自带管理界面。"),
                  bg=BG, fg=MUTED, font=(FONT, 9)).pack(anchor="w", padx=10)
+
+    def install_local_plugin(self):
+        folder = filedialog.askdirectory(title="选择 AstrBot 插件源码文件夹", parent=self)
+        if not folder:
+            return
+        try:
+            package = bundle_plugin_folder(folder)
+        except (OSError, RemoteError) as exc:
+            messagebox.showerror("插件无法安装", str(exc), parent=self)
+            return
+        size_kib = package["bytes"] / 1024
+        if not messagebox.askyesno(
+            "安装或更新插件",
+            f"插件：{package['plugin_id']}\n"
+            f"文本文件：{len(package['files'])} 个，共 {size_kib:.1f} KiB\n\n"
+            "程序会在项目 backups 目录备份原版本并只重启 AstrBot。\n"
+            "不会自动安装 requirements.txt 中的第三方依赖。确认继续？",
+            parent=self,
+        ):
+            return
+
+        def done(result):
+            verb = "已更新" if result.get("updated") else "已安装"
+            self.note.configure(
+                text=(f"{verb} {result['plugin_id']}；AstrBot 已重启；"
+                      f"备份：{result['backup']}"),
+                fg=JADE,
+            )
+            self.refresh()
+
+        payload = {"plugin_id": package["plugin_id"], "files": package["files"]}
+        self._request(
+            f"正在安装 {package['plugin_id']} 并重启 AstrBot…",
+            lambda: self._call("project_plugin_install", payload, 180),
+            done,
+        )
 
     def _build_bot_settings(self):
         tk.Label(self.bot_tab, text="每个人都用自己的 API 和 Bot 设定", bg=BG, fg=TEXT,

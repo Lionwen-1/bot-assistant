@@ -15,7 +15,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from server.manager import VERSION as MANAGER_VERSION
+from server.manager import (
+    MAX_PLUGIN_FILES,
+    MAX_PLUGIN_FILE_BYTES,
+    MAX_PLUGIN_TOTAL_BYTES,
+    PLUGIN_ID_PATTERN,
+    PLUGIN_TEXT_SUFFIXES,
+    VERSION as MANAGER_VERSION,
+)
 
 from .config import Profile, config_home
 
@@ -112,6 +119,48 @@ def bundled_thinking_plugin() -> tuple[str, str]:
     folder = base / "server" / "thinking_plugin"
     return ((folder / "main.py").read_text(encoding="utf-8"),
             (folder / "metadata.yaml").read_text(encoding="utf-8"))
+
+
+def bundle_plugin_folder(value: str | Path) -> dict:
+    folder = Path(value).expanduser().resolve(strict=True)
+    plugin_id = folder.name
+    if not folder.is_dir() or not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
+        raise RemoteError(
+            "plugin_package_invalid",
+            "插件文件夹名称应以 astrbot_plugin_ 开头，且只使用小写字母、数字和下划线",
+        )
+    files = []
+    total = 0
+    for path in sorted(folder.rglob("*")):
+        relative = path.relative_to(folder)
+        if any(part.startswith(".") or part == "__pycache__" for part in relative.parts):
+            continue
+        if path.is_symlink():
+            raise RemoteError("plugin_package_invalid", "插件包不能包含符号链接")
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in PLUGIN_TEXT_SUFFIXES:
+            raise RemoteError(
+                "plugin_package_invalid",
+                f"暂不支持上传二进制插件资源：{relative.as_posix()}",
+            )
+        raw = path.read_bytes()
+        if len(raw) > MAX_PLUGIN_FILE_BYTES:
+            raise RemoteError("plugin_package_invalid", f"插件文件过大：{relative.as_posix()}")
+        total += len(raw)
+        if total > MAX_PLUGIN_TOTAL_BYTES or len(files) >= MAX_PLUGIN_FILES:
+            raise RemoteError("plugin_package_invalid", "插件包文件过多或总大小超过限制")
+        try:
+            content = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise RemoteError(
+                "plugin_package_invalid", f"插件文件不是 UTF-8 文本：{relative.as_posix()}"
+            ) from exc
+        files.append({"path": relative.as_posix(), "content": content})
+    names = {item["path"] for item in files}
+    if not {"main.py", "metadata.yaml"}.issubset(names):
+        raise RemoteError("plugin_package_invalid", "插件文件夹缺少 main.py 或 metadata.yaml")
+    return {"plugin_id": plugin_id, "files": files, "bytes": total}
 
 
 class Remote:
@@ -261,11 +310,11 @@ class Remote:
         if action not in {"preflight", "list", "add", "adopt", "rename", "remove", "pause", "resume", "prepare",
                           "project_status", "project_logs", "project_backup",
                           "project_backups", "project_configs", "project_config_read",
-                          "project_plugins", "project_restart", "project_bot_settings",
+                          "project_plugins", "project_plugin_install", "project_restart", "project_bot_settings",
                           "project_thinking_status", "project_thinking_install",
                           "project_thinking_set"}:
             raise ValueError("unsupported action")
-        if action in {"pause", "resume"} and self._manager_version != MANAGER_VERSION:
+        if action in {"pause", "resume", "project_plugin_install"} and self._manager_version != MANAGER_VERSION:
             self.deploy()
         # The script path is fixed; only a known action is interpolated.
         command = f'python3 "{REMOTE_SCRIPT}" {action}'

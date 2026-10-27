@@ -24,7 +24,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.7.2"
+VERSION = "0.8.0"
 PRODUCT = "bot助手多账号连接与 AstrBot 项目运维软件"
 SOURCE_FILES = [
     ROOT / "run.pyw",

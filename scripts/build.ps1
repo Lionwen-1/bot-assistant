@@ -36,14 +36,14 @@ if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $marker)) {
     throw "EXE 自检失败"
 }
 $result = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
-if (-not $result.ok -or $result.app_version -ne "0.7.2" -or $result.local_manager -ne "0.5.1" -or -not $result.native_manager) {
+if (-not $result.ok -or $result.app_version -ne "0.8.0" -or $result.local_manager -ne "0.6.0" -or -not $result.native_manager) {
     throw "EXE 内缺少本机或服务器管理组件"
 }
 Remove-Item -LiteralPath $marker -Force
 $licenseDir = Join-Path $projectRoot "release\third_party_licenses"
 & $venvPython (Join-Path $projectRoot "scripts\collect_third_party_licenses.py") $licenseDir
 if ($LASTEXITCODE -ne 0) { throw "第三方许可提取失败" }
-$package = Join-Path $projectRoot "release\BotAssistant-0.7.2-win64.zip"
+$package = Join-Path $projectRoot "release\BotAssistant-0.8.0-win64.zip"
 if (Test-Path -LiteralPath $package) { Remove-Item -LiteralPath $package -Force }
 Compress-Archive -LiteralPath @(
     $exe,

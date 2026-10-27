@@ -9,7 +9,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from bot_assistant.config import Profile, load_profile, save_profile
-from bot_assistant.remote import MANAGER_VERSION, NO_CONSOLE, Remote, RemoteError, parse_host_keys
+from bot_assistant.remote import (
+    MANAGER_VERSION,
+    NO_CONSOLE,
+    Remote,
+    RemoteError,
+    bundle_plugin_folder,
+    parse_host_keys,
+)
 
 
 class RemoteTests(unittest.TestCase):
@@ -130,6 +137,25 @@ class RemoteTests(unittest.TestCase):
             self.assertEqual(remote.call("pause", {"qq": "12345678"})["state"], "paused")
             remote.call("resume", {"qq": "12345678"})
         deploy.assert_called_once_with()
+
+    def test_bundles_safe_text_plugin_folder(self):
+        folder = Path(self.temp.name) / "astrbot_plugin_demo"
+        folder.mkdir()
+        (folder / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (folder / "metadata.yaml").write_text(
+            "name: astrbot_plugin_demo\nversion: 1.0.0\n", encoding="utf-8"
+        )
+        (folder / "config.json").write_text('{"enabled":true}\n', encoding="utf-8")
+        bundled = bundle_plugin_folder(folder)
+        self.assertEqual(bundled["plugin_id"], "astrbot_plugin_demo")
+        self.assertEqual(
+            {item["path"] for item in bundled["files"]},
+            {"main.py", "metadata.yaml", "config.json"},
+        )
+        (folder / "asset.png").write_bytes(b"not-a-text-plugin-resource")
+        with self.assertRaises(RemoteError) as caught:
+            bundle_plugin_folder(folder)
+        self.assertEqual(caught.exception.code, "plugin_package_invalid")
 
 
 if __name__ == "__main__":

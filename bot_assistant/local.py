@@ -172,6 +172,8 @@ class Local:
                     "project_configs": lambda: project.configs(),
                     "project_config_read": lambda: project.config_read(payload.get("config")),
                     "project_plugins": lambda: project.plugins(),
+                    "project_plugin_install": lambda: project.plugin_install(
+                        payload.get("plugin_id"), payload.get("files")),
                     "project_bot_settings": lambda: project.bot_settings(),
                     "project_thinking_status": lambda: project.thinking_status(),
                     "project_thinking_install": lambda: project.thinking_install(

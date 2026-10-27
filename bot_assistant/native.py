@@ -19,7 +19,8 @@ import zipfile
 from pathlib import Path
 
 from server.manager import (PROTOCOL, QR_FRESH_SECONDS, QR_LIFETIME_SECONDS,
-                            install_thinking, set_thinking, thinking_status,
+                            install_plugin_bundle, install_thinking,
+                            rollback_plugin_bundle, set_thinking, thinking_status,
                             validate_name, validate_qq)
 
 from .config import NativeProfile
@@ -573,6 +574,25 @@ class NativeLocal:
                         plugins.append({"id": item.name, "name": item.name,
                                         "version": "", "description": ""})
             return {"plugins": plugins}
+        if action == "project_plugin_install":
+            result = install_plugin_bundle(
+                self.root, payload.get("plugin_id"), payload.get("files")
+            )
+            try:
+                self._restart_astrbot()
+                self._wait_astrbot()
+            except Exception as exc:
+                rollback_plugin_bundle(self.root, result)
+                try:
+                    self._restart_astrbot()
+                    self._wait_astrbot()
+                except Exception:
+                    pass
+                raise RemoteError(
+                    "plugin_restart_failed",
+                    f"AstrBot 重启失败，已恢复原插件；备份保存在 {result['backup']}",
+                ) from exc
+            return {**result, "restarted": "astrbot"}
         if action == "project_bot_settings":
             config = json.loads((self.root / "data" / "cmd_config.json").read_text(encoding="utf-8-sig"))
             return {"provider_count": sum(not str(item.get("id", "")).startswith(

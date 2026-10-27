@@ -28,14 +28,14 @@ import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 if os.name == "nt":
     import msvcrt
 
 PROTOCOL = 1
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 IMAGE = "mlikiowa/napcat-docker@sha256:2cc70b45244ae3fabc657ffc3aaa4de8fb893518171e519659ab83d80e6d36b5"
 HOME = Path(os.environ.get("BOT_ASSISTANT_HOME", Path.home() / ".local/share/bot-assistant"))
 
@@ -66,6 +66,11 @@ QR_LIFETIME_SECONDS = 110
 MAX_QR_BYTES = 1_000_000
 THINKING_LEVELS = ("none", "low", "high", "max")
 THINKING_PLUGIN = "astrbot_plugin_thinking_control"
+PLUGIN_ID_PATTERN = re.compile(r"^astrbot_plugin_[a-z0-9_]{1,64}$")
+PLUGIN_TEXT_SUFFIXES = {".py", ".json", ".yaml", ".yml", ".txt", ".md", ".html", ".css", ".js"}
+MAX_PLUGIN_FILES = 120
+MAX_PLUGIN_FILE_BYTES = 300_000
+MAX_PLUGIN_TOTAL_BYTES = 1_500_000
 PROJECT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 SENSITIVE_KEY_PATTERN = re.compile(r"token|secret|password|api.?key|credential|private.?key|cookie", re.I)
 
@@ -697,6 +702,112 @@ def set_thinking(root: Path, platform_id: object, level: object) -> dict:
     return {"platform_id": platform_id, "level": level}
 
 
+def _validated_plugin_bundle(
+    plugin_id: object, files: object
+) -> tuple[str, list[tuple[PurePosixPath, str]]]:
+    plugin_id = str(plugin_id or "")
+    if not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
+        raise ManagerError("plugin_package_invalid", "插件目录名格式无效")
+    if not isinstance(files, list) or not 2 <= len(files) <= MAX_PLUGIN_FILES:
+        raise ManagerError("plugin_package_invalid", "插件文件数量无效")
+    validated: list[tuple[PurePosixPath, str]] = []
+    seen: set[str] = set()
+    total = 0
+    for item in files:
+        if not isinstance(item, dict):
+            raise ManagerError("plugin_package_invalid", "插件文件清单无效")
+        name = item.get("path")
+        content = item.get("content")
+        if not isinstance(name, str) or not isinstance(content, str):
+            raise ManagerError("plugin_package_invalid", "插件文件内容无效")
+        relative = PurePosixPath(name)
+        if (
+            not name
+            or name in seen
+            or "\\" in name
+            or ":" in name
+            or any(ord(character) < 32 for character in name)
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or any(not part or part.startswith(".") for part in relative.parts)
+            or relative.suffix.lower() not in PLUGIN_TEXT_SUFFIXES
+        ):
+            raise ManagerError("plugin_package_invalid", "插件包含不安全的文件路径")
+        encoded = content.encode("utf-8")
+        if len(encoded) > MAX_PLUGIN_FILE_BYTES:
+            raise ManagerError("plugin_package_invalid", "插件单个文件过大")
+        total += len(encoded)
+        if total > MAX_PLUGIN_TOTAL_BYTES:
+            raise ManagerError("plugin_package_invalid", "插件包总大小超过限制")
+        if relative.suffix.lower() == ".py":
+            try:
+                compile(content, f"{plugin_id}/{relative.as_posix()}", "exec")
+            except SyntaxError as exc:
+                raise ManagerError("plugin_package_invalid", "插件 Python 代码语法有误") from exc
+        seen.add(name)
+        validated.append((relative, content))
+    if "main.py" not in seen or "metadata.yaml" not in seen:
+        raise ManagerError("plugin_package_invalid", "插件必须包含 main.py 和 metadata.yaml")
+    metadata = next(content for path, content in validated if path.as_posix() == "metadata.yaml")
+    match = re.search(r"(?m)^name:\s*['\"]?([^'\"\s]+)", metadata)
+    if not match or match.group(1) != plugin_id:
+        raise ManagerError("plugin_package_invalid", "metadata.yaml 的插件名与目录不一致")
+    return plugin_id, validated
+
+
+def install_plugin_bundle(root: Path, plugin_id: object, files: object) -> dict:
+    plugin_id, validated = _validated_plugin_bundle(plugin_id, files)
+    plugins = root / "data" / "plugins"
+    secure_dir(plugins)
+    target = plugins / plugin_id
+    if target.is_symlink():
+        raise ManagerError("plugin_package_invalid", "现有插件目录是符号链接，拒绝覆盖")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = root / "backups" / f"plugin-{plugin_id}-{stamp}-{secrets.token_hex(3)}"
+    secure_dir(backup)
+    staging = plugins / f".{plugin_id}.new-{secrets.token_hex(4)}"
+    secure_dir(staging)
+    had_previous = target.is_dir()
+    try:
+        for relative, content in validated:
+            atomic_text(staging.joinpath(*relative.parts), content)
+        if target.exists() and not target.is_dir():
+            raise ManagerError("plugin_package_invalid", "插件目标被非目录文件占用")
+        if had_previous:
+            shutil.move(str(target), str(backup / "previous"))
+        os.replace(staging, target)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        previous = backup / "previous"
+        if previous.is_dir() and not target.exists():
+            shutil.move(str(previous), str(target))
+        raise
+    return {
+        "plugin_id": plugin_id,
+        "updated": had_previous,
+        "files": len(validated),
+        "bytes": sum(len(content.encode("utf-8")) for _path, content in validated),
+        "backup": backup.name,
+    }
+
+
+def rollback_plugin_bundle(root: Path, result: dict) -> None:
+    plugin_id = str(result.get("plugin_id", ""))
+    backup_name = str(result.get("backup", ""))
+    if not PLUGIN_ID_PATTERN.fullmatch(plugin_id) or not backup_name.startswith(
+        f"plugin-{plugin_id}-"
+    ):
+        return
+    target = root / "data" / "plugins" / plugin_id
+    backup = root / "backups" / backup_name
+    previous = backup / "previous"
+    if target.is_dir() and not target.is_symlink():
+        shutil.move(str(target), str(backup / "failed"))
+    if previous.is_dir() and not previous.is_symlink():
+        shutil.move(str(previous), str(target))
+
+
 class ProjectOps:
     """Constrained operations on one explicitly configured Compose project."""
 
@@ -886,6 +997,24 @@ class ProjectOps:
                 result.append(info)
         return {"plugins": result}
 
+    def plugin_install(self, plugin_id: object, files: object) -> dict:
+        if "astrbot" not in self.services():
+            raise ManagerError("plugin_unavailable", "项目没有 AstrBot 服务")
+        result = install_plugin_bundle(self.root, plugin_id, files)
+        try:
+            self._compose("restart", "astrbot", timeout=150)
+        except ManagerError as exc:
+            rollback_plugin_bundle(self.root, result)
+            try:
+                self._compose("restart", "astrbot", timeout=150)
+            except ManagerError:
+                pass
+            raise ManagerError(
+                "plugin_restart_failed",
+                f"AstrBot 重启失败，已恢复原插件；备份保存在 {result['backup']}",
+            ) from exc
+        return {**result, "restarted": "astrbot"}
+
     def bot_settings(self) -> dict:
         """Return an allowlisted setup summary without provider credentials."""
         path = self.root / "data" / "cmd_config.json"
@@ -986,7 +1115,8 @@ def main() -> int:
         payload = json.load(sys.stdin) if action in {"add", "adopt", "rename", "remove", "pause", "resume", "prepare",
                                                        "project_status", "project_logs", "project_backup",
                                                        "project_backups", "project_configs",
-                                                       "project_config_read", "project_plugins", "project_bot_settings",
+                                                       "project_config_read", "project_plugins", "project_plugin_install",
+                                                       "project_bot_settings",
                                                        "project_thinking_status", "project_thinking_install",
                                                        "project_thinking_set",
                                                        "project_restart"} else {}
@@ -1035,6 +1165,8 @@ def main() -> int:
                 result = project.config_read(payload.get("config"))
             elif action == "project_plugins":
                 result = project.plugins()
+            elif action == "project_plugin_install":
+                result = project.plugin_install(payload.get("plugin_id"), payload.get("files"))
             elif action == "project_bot_settings":
                 result = project.bot_settings()
             elif action == "project_thinking_status":

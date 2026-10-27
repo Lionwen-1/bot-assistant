@@ -8,7 +8,7 @@
 
 [English](README.en.md) · [部署方式](#选择部署方式) · [快速开始](#下载与开始使用) · [验证范围](#验证状态) · [著作权与许可](COPYRIGHT.md) · [支持项目](#支持项目)
 
-> **当前版本：0.7.2（预览版）。** Windows 免 Docker 部署仍在预发布阶段：官方组件已在隔离项目启动并生成二维码，尚未用独立测试号完成真实扫码、聊天收发和多账号并发验收。请先在测试环境试用。
+> **当前源码版本：0.8.0（预览版）。** Windows 免 Docker 部署仍在预发布阶段：官方组件已在隔离项目启动并生成二维码，尚未用独立测试号完成真实扫码、聊天收发和多账号并发验收。请先在测试环境试用。
 
 ## 能做什么
 
@@ -19,6 +19,7 @@
 | Bot 设置 | 配置自己的模型 API、角色与可选语音；查看不含密钥的设置摘要。 |
 | 思维强度 | 对支持的 DeepSeek 模型，按 QQ 账号分别设置关闭、低、高、最高；管理员也可在 QQ 会话中用自然语言调整。 |
 | 项目运维 | 查看服务、日志、备份、非敏感配置和插件清单，并打开 AstrBot 控制台。 |
+| 插件迭代 | 从本地源码文件夹安全安装或更新纯文本 AstrBot 插件；安装前校验，更新前备份，失败时回滚，且只重启 AstrBot。 |
 
 ## 选择部署方式
 
@@ -32,7 +33,7 @@
 
 ## 下载与开始使用
 
-1. 从 [0.7.2 预览版](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.2)下载 `BotAssistant-0.7.2-win64.zip`，解压后双击 `BotAssistant.exe`。也可从 **Actions → Windows build** 获取最新构建，或按下文从源码构建。运行 EXE 无需安装 Python。
+1. 需要最新的 0.8.0 功能时，从 **Actions → Windows build** 下载主分支构建，或按下文从源码构建；稳定预览包仍可从 [0.7.2 版本页](https://github.com/Lionwen-1/bot-assistant/releases/tag/v0.7.2)下载。解压后双击 `BotAssistant.exe`，运行 EXE 无需安装 Python。
 2. 在“连接设置”选择部署方式。免 Docker 模式选择新的空目录，并填写自己的模型 API、AstrBot 控制台密码、角色与可选语音设置；其他模式按界面填写本机项目或 SSH 服务器信息。
 3. 点击“添加账号”，输入 QQ 号和昵称；在该账号卡片获取二维码，用手机 QQ 扫码确认。
 4. 登录后查看账号状态。掉线时只操作对应卡片的“获取登录码”；程序会检查状态与旧码时效，状态不明时不会重启账号。需要暂时停用某个账号时，点该卡片的“主动下线”，之后可点“恢复上线”。
@@ -66,7 +67,7 @@
 - 每个 QQ 号有独立的 NapCat 登录目录。移除新建账号会停止该号进程或容器并移出列表，默认保留登录数据以供重新添加。
 - 主动下线只停止所选账号并保留登录数据；本程序会记住该状态。被接管的 Docker 容器若使用 `always` 重启策略，Docker 守护进程重启后仍可能把它启动；界面会显示“下线未生效”，可再次下线。独立监控需自行遵从账号清单中的状态。
 - 备份包含配置、数据库和 QQ 登录目录，可能含凭据；请妥善保管。本机备份在所选项目的 `backups/`，远程备份留在服务器项目的 `backups/`。
-- 配置预览只显示非敏感文件；插件启停、更新及高级 AstrBot 设置由 AstrBot 官方控制台处理。
+- 配置预览只显示非敏感文件。插件页可安装或更新使用 UTF-8 编码的纯文本源码插件；会拒绝二进制文件、符号链接、越界路径、超限文件和 Python 语法错误，不会自动执行或安装 `requirements.txt` 依赖。插件启停、依赖安装及高级 AstrBot 设置仍由 AstrBot 官方控制台处理，详见[插件安装边界](docs/PLUGIN_INSTALL.md)。
 - 项目不开放公网 NapCat 管理端口。远程 AstrBot 控制台通过临时 SSH 隧道访问。
 - bot助手与 AstrBot、NapCatQQ、腾讯 QQ 官方均无隶属关系。AstrBot、NapCat、QQ、Docker 程序不随本仓库或 EXE 再分发；EXE 内的 Python、Pillow 等依赖另见 [第三方许可与条件](THIRD_PARTY.md)。
 
@@ -74,7 +75,7 @@
 
 | 项目 | 当前结果 |
 | --- | --- |
-| 单元测试与 Windows EXE 自检 | 0.7.2 通过 47 项自动测试与内置资源检查。 |
+| 单元测试与 Windows EXE 自检 | 0.8.0 通过 51 项自动测试与 Windows EXE 内置资源检查。 |
 | 现有云端项目 | 两个已接管账号的状态、项目服务和角色隔离已检查；思维档位按号保存与恢复已验证。 |
 | 管理员 QQ 自然语言指令 | 规则与权限有自动测试；真实 QQ 消息调用尚未实测。 |
 | 全新本机免 Docker 项目 | 官方组件启动及二维码生成已验证；真实扫码、聊天回复和多号并发待独立测试号验收。 |
@@ -90,13 +91,14 @@ python -m unittest discover -s tests -v
 
 构建脚本输出 `release/BotAssistant.exe` 和版本化的 Windows ZIP，并从构建环境收集随 EXE 分发的 Python、Tcl/Tk、Pillow 许可文本。`python run.pyw --demo` 可预览三张标有“演示账号”的卡片，不连接真实账号或服务器。
 
-代码分布：`bot_assistant/` 是 Windows 客户端，`server/manager.py` 是远程管理脚本，`server/thinking_plugin/` 是思维强度插件，`tests/` 是模拟测试。发布包包含本项目代码、图标和随包依赖，首次部署所需的 AstrBot、NapCat、QQ 或 Docker 程序由使用者从官方来源下载。
+代码分布：`bot_assistant/` 是 Windows 客户端，`server/manager.py` 是本机/远程项目管理脚本，`server/thinking_plugin/` 是思维强度插件，`tests/` 是模拟测试。发布包包含本项目代码、图标和随包依赖，首次部署所需的 AstrBot、NapCat、QQ 或 Docker 程序由使用者从官方来源下载。
 
 ## 进一步阅读
 
 - [Windows 免 Docker 部署](NATIVE_SETUP.md)
 - [本机 Docker / 远程 OneBot 对接](docs/DOCKER_CONNECT.md)
 - [接管现有 NapCat 账号](docs/ADOPT_EXISTING.md)
+- [安装与更新本地插件](docs/PLUGIN_INSTALL.md)
 - [软著登记准备说明](docs/COPYRIGHT_REGISTRATION.md)
 - [第三方组件与许可](THIRD_PARTY.md)
 - [公开发布前隐私核查](docs/PUBLIC_RELEASE_AUDIT.md)
